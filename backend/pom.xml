@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.15</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.siryos.behave</groupId>
+    <artifactId>chatbot-behave</artifactId>
+    <version>0.2.0-V0</version>
+    <name>chatbot-behave</name>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- MODIFIÉ (migration Groq -> Gemini) : Spring AI 1.1.8 est la
+             dernière version stable de la ligne 1.1.x (celle qui reste sur
+             Spring Boot 3.x, contrairement à Spring AI 2.0 qui exige Spring
+             Boot 4 / Spring Framework 7). C'est la première ligne stable qui
+             embarque le starter spring-ai-starter-model-google-genai
+             (Gemini Developer API par clé API, pas besoin de compte GCP/
+             Vertex). Nécessite Spring Boot >= 3.5.15 (cf. parent ci-dessus). -->
+        <spring-ai.version>1.1.8</spring-ai.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Vector store (pgvector). Nom mis a jour : spring-ai-starter-vector-store-pgvector -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
+        </dependency>
+
+        <!--
+            MODIFIÉ (migration Groq -> Gemini) : Gemini est multimodal
+            nativement (texte + vision), ce qui correspond exactement à
+            notre usage (chat texte ET analyse d'image dans ChatService).
+            Utilise la Gemini Developer API (clé API simple, cf.
+            spring.ai.google.genai.api-key dans application.yml) — pas le
+            mode Vertex AI (qui demanderait un projet GCP).
+        -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-google-genai</artifactId>
+        </dependency>
+
+        <!--
+            Groq ne propose pas d'endpoint d'embeddings.
+            Modele d'embedding LOCAL (ONNX, gratuit, sans cle API).
+            Nom mis a jour : spring-ai-starter-model-transformers
+            Modele par defaut : sentence-transformers/all-MiniLM-L6-v2 (dim=384).
+        -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-transformers</artifactId>
+        </dependency>
+
+        <!-- Lecture PDF (nom inchange) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-pdf-document-reader</artifactId>
+        </dependency>
+
+        <!-- Lecture Word (nom inchange, Tika couvre .docx) -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-tika-document-reader</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- NOUVEAU : JPA/Hibernate, pour les nouvelles tables "metier"
+             (registre des guides admin avec leur hash de contenu, et
+             historique des conversations). Utilise le même datasource
+             Postgres que PGVector (même base, tables différentes) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>21</release>
+                    <source>25</source>
+                    <target>25</target>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,123 @@
+server:
+  port: 8081
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 16MB
+      max-request-size: 16MB
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/behave_chatbot
+    username: behave
+    password: behave_pwd
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      # NOUVEAU : les tables "métier" (guides, sessions, messages) sont
+      # créées/mises à jour automatiquement par Hibernate. Le schéma
+      # PGVector (table vector_store) reste géré séparément par
+      # spring.ai.vectorstore.pgvector.initialize-schema ci-dessous — les
+      # deux mécanismes cohabitent sans conflit (tables différentes).
+      ddl-auto: update
+    open-in-view: false
+
+  ai:
+    # MODIFIÉ (migration Groq -> Gemini) : backoff générique conservé en
+    # filet de sécurité déclaratif. Le retry MANUEL spécifique aux erreurs
+    # 429 de Groq (parsing du message "try again in Xs") a été retiré de
+    # ChatService car il n'a plus de sens avec l'API Gemini (format
+    # d'erreur différent, quotas Gemini nettement plus généreux).
+    retry:
+      max-attempts: 3
+      backoff:
+        initial-interval: 5s
+        multiplier: 2.0
+        max-interval: 30s
+
+    google:
+      genai:
+        # Clé Gemini Developer API (PAS un projet GCP/Vertex : ne jamais
+        # définir project-id/location ci-dessous, sinon Spring AI bascule
+        # en mode Vertex AI et rejette cette clé). Récupérable sur
+        # https://aistudio.google.com/apikey
+        api-key: AQ.Ab8RN6KPh4cqfaVI5KuSEzeDKhH-UrUoB-HPD2jv5m1BdLU27g
+        chat:
+          options:
+            # Gemini 3.7 Flash : multimodal (texte + image), donc utilisé
+            # à la fois pour le chat texte ET la vision (cf.
+            # behave.ai.vision-model ci-dessous, et ChatService) — comme
+            # Qwen avant lui. Les identifiants de modèle changent vite chez
+            # Google : si ce modèle venait à être déprécié, la liste à jour
+            # est sur https://ai.google.dev/gemini-api/docs/models
+            model: gemini-3.7-flash
+            temperature: 0.3
+
+    embedding:
+      transformer:
+        enabled: true
+        # CORRIGÉ (bug : mauvaise correspondance guide / mauvais passage-image
+        # retrouvé) : le modèle par défaut de spring-ai-starter-model-transformers
+        # est sentence-transformers/all-MiniLM-L6-v2, un modèle quasi
+        # exclusivement anglophone. Nos guides et les mots-clés extraits des
+        # images sont en français (et parfois arabe) : les embeddings produits
+        # étaient sémantiquement peu fiables pour ces langues, d'où une
+        # similarité cosinus qui ne pointait pas vers le bon chunk/la bonne
+        # image du guide. On passe à un modèle MULTILINGUE, même dimension
+        # (384) pour rester compatible avec le schema PGVector existant.
+        onnx:
+          model-uri: https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx
+        tokenizer:
+          uri: https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json
+
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 384
+        initialize-schema: true
+
+behave:
+  docs:
+    # MODIFIÉ (espace admin) : les guides ne sont plus figés sur le
+    # classpath (non réinscriptible une fois le jar packagé). Ils vivent
+    # maintenant dans un dossier disque normal, alimenté par les uploads de
+    # l'admin (cf. GuideAdminService). Au premier démarrage, si ce dossier
+    # est vide, les guides déjà présents dans src/main/resources/docs sont
+    # importés automatiquement une fois (cf. GuideAdminService#migrateLegacyClasspathDocsOnce).
+    storage-dir: ${BEHAVE_DOCS_STORAGE_DIR:./data/behave-docs}
+    folder: classpath:docs/
+    converted-folder: /tmp/behave-converted-pdfs
+    images-folder: /tmp/behave-images
+    libreoffice-binary: soffice
+  chunk:
+    # CORRIGÉ (cause racine du mauvais retrieval observé pendant tous nos
+    # tests) : size=800 est en TOKENS du tokenizer de TokenTextSplitter
+    # (type GPT/cl100k), ce qui produisait des chunks de 3000 à 6000+
+    # CARACTÈRES. Le modèle d'embedding MiniLM multilingue, lui, ne prend
+    # en compte que ses ~128 premiers tokens (~500-600 caractères) : tout
+    # le reste du chunk était silencieusement ignoré au moment de calculer
+    # le vecteur, même si le texte était bien stocké en base. Un passage
+    # pertinent situé après ce seuil (ex: le paragraphe des "tachymètres"
+    # à la fin du chunk page 13) n'était donc JAMAIS réellement pris en
+    # compte dans la similarité, d'où les mauvaises correspondances.
+    # On réduit donc fortement la taille des chunks pour qu'ils tiennent
+    # entièrement dans la fenêtre effective du modèle d'embedding.
+    size: 100
+    overlap: 20
+  # Modèle vision, configurable plutôt qu'en dur dans ChatService.java
+  # (cf. demande §12). Même valeur que le modèle chat pour l'instant
+  # (Gemini 3.7 Flash gère les deux, comme Qwen avant lui), mais peut
+  # diverger plus tard sans toucher au code.
+  ai:
+    vision-model: gemini-3.7-flash
+  admin:
+    # NOUVEAU (sécurité espace admin) : identifiants attendus par
+    # AdminAuthController pour se connecter à /admin côté front.
+    # Surchargeables par variables d'environnement en production —
+    # NE PAS laisser les valeurs par défaut en prod.
+    username: ${BEHAVE_ADMIN_USERNAME:admin}
+    password: ${BEHAVE_ADMIN_PASSWORD:changeme}
+    # Durée de validité du token de session admin.
+    token-ttl-minutes: ${BEHAVE_ADMIN_TOKEN_TTL_MINUTES:480}
